@@ -1,28 +1,59 @@
 import streamlit as st
 import time
+import os
 
-FILE_PATH = "acc.txt"
+# ---------------- CONFIG ---------------- #
+
+st.set_page_config("ATM Banking System", layout="wide")
+
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+FILE_PATH = os.path.join(BASE_DIR, "acc.txt")
 
 # ---------------- FILE HANDLING ---------------- #
 
-def load_users():
-    users = {}
-    with open(FILE_PATH, "r", encoding="utf-8") as f:
-        blocks = f.read().split("---")
-        for b in blocks:
-            if b.strip():
-                lines = [l.strip() for l in b.strip().split("\n")]
-                user = lines[0].split(":",1)[1].lower()
-                pin = lines[1].split(":",1)[1]
-                bal = float(lines[2].split(":",1)[1])
-                tx = lines[4:] if len(lines) > 4 else []
-                users[user] = {"PIN": pin, "Balance": bal, "Tx": tx}
-    return users
+def ensure_file():
+    """Ensure acc.txt exists (Streamlit Cloud safe)"""
+    if not os.path.exists(FILE_PATH):
+        with open(FILE_PATH, "w", encoding="utf-8") as f:
+            f.write(
+                "User:admin\n"
+                "PIN:1234\n"
+                "Balance:5000\n"
+                "Transactions:\n"
+                "Account created\n"
+                "---\n"
+            )
 
+def load_users():
+    ensure_file()
+    users = {}
+
+    with open(FILE_PATH, "r", encoding="utf-8") as f:
+        content = f.read().strip()
+
+    if not content:
+        return users
+
+    for block in content.split("---"):
+        block = block.strip()
+        if not block:
+            continue
+
+        lines = [l.strip() for l in block.splitlines()]
+        try:
+            user = lines[0].split(":", 1)[1].lower()
+            pin = lines[1].split(":", 1)[1]
+            bal = float(lines[2].split(":", 1)[1])
+            tx = lines[4:] if len(lines) > 4 else []
+            users[user] = {"PIN": pin, "Balance": bal, "Tx": tx}
+        except Exception:
+            continue
+
+    return users
 
 def save_users(users):
     with open(FILE_PATH, "w", encoding="utf-8") as f:
-        for u,d in users.items():
+        for u, d in users.items():
             f.write(f"User:{u}\n")
             f.write(f"PIN:{d['PIN']}\n")
             f.write(f"Balance:{d['Balance']}\n")
@@ -31,9 +62,15 @@ def save_users(users):
                 f.write(f"{t}\n")
             f.write("---\n")
 
-# ---------------- UI CONFIG ---------------- #
+# ---------------- SESSION ---------------- #
 
-st.set_page_config("ATM Banking System", layout="wide")
+if "logged" not in st.session_state:
+    st.session_state.logged = False
+    st.session_state.page = "login"
+
+users = load_users()
+
+# ---------------- UI STYLE ---------------- #
 
 st.markdown("""
 <style>
@@ -49,14 +86,6 @@ button {border-radius:12px!important;}
 </style>
 """, unsafe_allow_html=True)
 
-# ---------------- SESSION ---------------- #
-
-if "logged" not in st.session_state:
-    st.session_state.logged = False
-    st.session_state.page = "login"
-
-users = load_users()
-
 # ---------------- LOGIN ---------------- #
 
 if not st.session_state.logged:
@@ -71,7 +100,7 @@ if not st.session_state.logged:
             if user in users and pin == users[user]["PIN"]:
                 st.session_state.logged = True
                 st.session_state.user = user
-                st.session_state.page = "home"
+                st.session_state.page = "balance"
                 st.success("Login successful")
                 st.rerun()
             else:
@@ -84,6 +113,7 @@ if not st.session_state.logged:
 # ---------------- SIDEBAR ---------------- #
 
 st.sidebar.markdown("## 🏦 ATM Menu")
+
 if st.sidebar.button("💰 Check Balance"):
     st.session_state.page = "balance"
 if st.sidebar.button("➕ Deposit Money"):
@@ -102,12 +132,10 @@ user = st.session_state.user
 
 st.markdown("<div class='card'>", unsafe_allow_html=True)
 
-# ✅ BALANCE
 if st.session_state.page == "balance":
     st.subheader("💰 Current Balance")
     st.metric("Available Balance", f"₹ {users[user]['Balance']}")
 
-# ✅ DEPOSIT
 elif st.session_state.page == "deposit":
     st.subheader("➕ Deposit Money")
     amt = st.number_input("Enter amount", min_value=1, step=100)
@@ -119,7 +147,6 @@ elif st.session_state.page == "deposit":
         save_users(users)
         st.success("Deposit successful")
 
-# ✅ WITHDRAW
 elif st.session_state.page == "withdraw":
     st.subheader("➖ Withdraw Money")
     amt = st.number_input("Enter amount", min_value=1, step=100)
@@ -134,10 +161,10 @@ elif st.session_state.page == "withdraw":
         else:
             st.error("Insufficient balance")
 
-# ✅ HISTORY
 elif st.session_state.page == "history":
     st.subheader("🧾 Transaction History")
     for t in users[user]["Tx"]:
         st.write("•", t)
 
 st.markdown("</div>", unsafe_allow_html=True)
+
